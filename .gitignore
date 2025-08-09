@@ -62,3 +62,6 @@ venv/
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+# Project-specific output
+out/

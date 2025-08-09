@@ -27,7 +27,7 @@ This tool systematically gathers information from the Ollama website, including 
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/chrizzo/OllamaScraper.git
+    git clone https://github.com/chrizzo84/OllamaScraper.git
     cd OllamaScraper
     ```
 

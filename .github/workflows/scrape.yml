@@ -15,6 +15,9 @@ on:
 jobs:
   scrape-and-commit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,4 +41,3 @@ jobs:
           file_pattern: out/ollama_models.json
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
-
