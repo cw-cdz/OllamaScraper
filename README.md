@@ -68,7 +68,7 @@ The model data is automatically updated daily via a GitHub Actions workflow. The
 You can access the raw JSON file directly for use in your own applications via the following URL:
 
 ```
-https://raw.githubusercontent.com/chrizzo/OllamaScraper/main/out/ollama_models.json
+https://raw.githubusercontent.com/chrizzo84/OllamaScraper/refs/heads/main/out/ollama_models.json
 ```
 
 
