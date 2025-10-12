@@ -1,0 +1,46 @@
+name: Scrape Community Models
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC (1 hour after official)
+
+  push:
+    branches:
+      - main
+    paths:
+      - 'ollama_scraper.py'
+      - 'merge_catalogs.py'
+      - '.github/workflows/scrape-community.yml'
+
+jobs:
+  scrape-community:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Run community models scrape
+        run: uv run ollama_scraper.py --mode community
+
+      - name: Merge catalogs
+        run: uv run merge_catalogs.py
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: Update community Ollama models"
+          file_pattern: |
+            out/ollama_models_community.json
+            out/ollama_models.json
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "github-actions[bot]@users.noreply.github.com"

@@ -1,16 +1,20 @@
-name: Scrape Ollama Models
+name: Scrape All Models (Legacy/Manual)
+
+# This workflow is kept for manual triggering to scrape both official and community models
+# For scheduled scraping, use scrape-official.yml and scrape-community.yml instead
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 5 * * *'
-  
-  push:
-    branches:
-      - main
-    paths:
-      - 'ollama_scraper.py'
-      - '.github/workflows/scrape.yml'
+    inputs:
+      mode:
+        description: 'Scraping mode'
+        required: true
+        type: choice
+        options:
+          - official
+          - community
+          - all
+        default: 'all'
 
 jobs:
   scrape-and-commit:
@@ -22,22 +26,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Set up Python
+        run: uv python install 3.11
 
       - name: Run scraper
-        run: python ollama_scraper.py
+        run: uv run ollama_scraper.py --mode ${{ github.event.inputs.mode }}
+
+      - name: Merge catalogs
+        run: uv run merge_catalogs.py
 
       - name: Commit and push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: Update Ollama models data"
-          file_pattern: out/ollama_models.json
+          commit_message: "chore: Update Ollama models data (mode: ${{ github.event.inputs.mode }})"
+          file_pattern: |
+            out/ollama_models_official.json
+            out/ollama_models_community.json
+            out/ollama_models.json
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
