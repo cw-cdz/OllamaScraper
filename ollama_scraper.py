@@ -1,4 +1,14 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "beautifulsoup4>=4.12.3",
+#   "httpx>=0.27.0",
+#   "lxml>=5.2.1",
+#   "rich>=13.7.0",
+#   "tenacity>=8.2.3",
+# ]
+# ///
 """Ollama model catalog scraper.
 
 Workflow:
@@ -71,13 +81,32 @@ async def fetch(client: httpx.AsyncClient, url: str) -> str:
 	resp.raise_for_status()
 	return resp.text
 
-def parse_search(html: str) -> List[Dict[str, Any]]:
+def filter_by_mode(slug: str, mode: str) -> bool:
+	"""Filter slugs based on mode.
+
+	Args:
+		slug: Model slug (e.g., 'llama3' or 'user/model')
+		mode: 'official', 'community', or 'all'
+
+	Returns:
+		True if slug should be included, False otherwise
+	"""
+	has_slash = '/' in slug
+	if mode == 'official':
+		return not has_slash
+	elif mode == 'community':
+		return has_slash
+	elif mode == 'all':
+		return True
+	return False
+
+def parse_search(html: str, mode: str = 'official') -> List[Dict[str, Any]]:
 	soup = BeautifulSoup(html, 'lxml')
 	out = []
 	for a in soup.select('a[href^="/library/"]'):
 		href = a.get('href','')
 		slug = href.split('/library/')[-1].strip()
-		if not slug or '/' in slug:  # skip deeper links
+		if not slug or not filter_by_mode(slug, mode):
 			continue
 		if any(m['slug'] == slug for m in out):  # dedupe
 			continue
@@ -176,6 +205,26 @@ def parse_tags(html: str, model: Dict[str, Any]) -> None:
 	model['variants'] = deduped
 	model['tags_count'] = len(deduped)
 
+def get_output_path(mode: str, custom_out: Optional[str]) -> str:
+	"""Determine output path based on mode and custom override.
+
+	Args:
+		mode: 'official', 'community', or 'all'
+		custom_out: Custom output path (overrides mode-based naming)
+
+	Returns:
+		Output file path
+	"""
+	if custom_out:
+		return custom_out
+
+	if mode == 'official':
+		return 'out/ollama_models_official.json'
+	elif mode == 'community':
+		return 'out/ollama_models_community.json'
+	else:
+		return 'out/ollama_models.json'
+
 async def scrape_model(client: httpx.AsyncClient, base_info: Dict[str, Any]) -> Dict[str, Any]:
 	slug = base_info['slug']
 	model = dict(base_info)
@@ -190,17 +239,24 @@ async def scrape_model(client: httpx.AsyncClient, base_info: Dict[str, Any]) -> 
 		model['error'] = str(e)
 	return model
 
-async def main(limit: Optional[int] = None, out_path: str = 'out/ollama_models.json'):
+async def scrape_with_mode(
+	mode: str,
+	limit: Optional[int],
+	out_path: Optional[str]
+):
+	"""Run scraping for a specific mode."""
+	start_time = datetime.now(timezone.utc)
+
 	async with httpx.AsyncClient(headers={'User-Agent': 'Mozilla/5.0 (compatible; OllamaScraper/1.0)'}) as client:
 		search_html = await fetch(client, SEARCH_URL)
-		base_models = parse_search(search_html)
+		base_models = parse_search(search_html, mode)
 		if limit:
 			base_models = base_models[:limit]
-		console.log(f"Discovered {len(base_models)} model slugs")
+		console.log(f"[{mode}] Discovered {len(base_models)} model slugs")
 		results: List[Dict[str, Any]] = []
 		sem = asyncio.Semaphore(6)
 		progress = Progress(SpinnerColumn(), *Progress.get_default_columns(), TimeElapsedColumn(), transient=True)
-		task_id = progress.add_task("Scraping models", total=len(base_models))
+		task_id = progress.add_task(f"[{mode}] Scraping models", total=len(base_models))
 		progress.start()
 		try:
 			async def worker(info: Dict[str, Any]):
@@ -211,17 +267,31 @@ async def main(limit: Optional[int] = None, out_path: str = 'out/ollama_models.j
 			await asyncio.gather(*(worker(m) for m in base_models))
 		finally:
 			progress.stop()
+
 	results.sort(key=lambda x: (-(x.get('pulls') or 0), x['slug']))
+
+	end_time = datetime.now(timezone.utc)
+	duration_seconds = (end_time - start_time).total_seconds()
+
 	data = {
-		'scraped_at': datetime.now(timezone.utc).isoformat(),
+		'scraped_at': start_time.isoformat(),
+		'completed_at': end_time.isoformat(),
+		'duration_seconds': round(duration_seconds, 2),
+		'model_type': mode,
 		'models': results,
 	}
+
+	output_file = get_output_path(mode, out_path)
 	import os
-	os.makedirs(os.path.dirname(out_path), exist_ok=True)
-	with open(out_path, 'w', encoding='utf-8') as f:
+	os.makedirs(os.path.dirname(output_file), exist_ok=True)
+	with open(output_file, 'w', encoding='utf-8') as f:
 		json.dump(data, f, ensure_ascii=False, indent=2)
-	console.log(f"Wrote {out_path} with {len(results)} models")
-	table = Table(title="Ollama Models (top 20 by pulls)")
+
+	console.log(f"[bold green]Scrape completed in {duration_seconds:.1f}s[/bold green]")
+	console.log(f"Mode: {mode}")
+	console.log(f"Wrote {output_file} with {len(results)} models")
+
+	table = Table(title=f"Ollama Models - {mode.capitalize()} (top 20 by pulls)")
 	table.add_column("Slug")
 	table.add_column("Pulls", justify="right")
 	table.add_column("Caps")
@@ -230,10 +300,51 @@ async def main(limit: Optional[int] = None, out_path: str = 'out/ollama_models.j
 		table.add_row(m['slug'], str(m.get('pulls') or ''), ','.join(m.get('capabilities', [])), str(m.get('tags_count') or 0))
 	console.print(table)
 
+async def main(
+	limit: Optional[int] = None,
+	mode: str = 'official',
+	out_path: Optional[str] = None
+):
+	if mode == 'all':
+		# Run official scrape
+		console.log("[bold cyan]Running official models scrape...[/bold cyan]")
+		await scrape_with_mode('official', limit, None)
+
+		# Run community scrape
+		console.log("[bold cyan]Running community models scrape...[/bold cyan]")
+		await scrape_with_mode('community', limit, None)
+
+		console.log("[bold green]Both scrapes completed![/bold green]")
+		return
+
+	# Single mode scraping
+	await scrape_with_mode(mode, limit, out_path)
+
 if __name__ == '__main__':
 	import argparse
-	p = argparse.ArgumentParser()
-	p.add_argument('--limit', type=int, help='Limit number of models for quick test')
-	p.add_argument('--out', default='out/ollama_models.json')
+	p = argparse.ArgumentParser(
+		description='Scrape Ollama model library with official/community filtering'
+	)
+	p.add_argument(
+		'--limit',
+		type=int,
+		help='Limit number of models for quick test'
+	)
+	p.add_argument(
+		'--mode',
+		choices=['official', 'community', 'all'],
+		default='official',
+		help='Scraping mode: official (no slash), community (has slash), or all (both)'
+	)
+	p.add_argument(
+		'--out',
+		help='Custom output path (ignored if mode=all)'
+	)
 	args = p.parse_args()
-	asyncio.run(main(limit=args.limit, out_path=args.out))
+
+	# Validate: mode=all conflicts with custom output
+	if args.mode == 'all' and args.out:
+		console.print("[yellow]Warning: --out ignored when --mode=all (generates both default files)[/yellow]")
+		args.out = None
+
+	asyncio.run(main(limit=args.limit, mode=args.mode, out_path=args.out))
