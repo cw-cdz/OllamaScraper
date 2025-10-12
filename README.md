@@ -21,9 +21,12 @@ This tool systematically gathers information from the Ollama website, including 
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.11+
+- UV package manager
 
 ## Installation
+
+This script uses UV and PEP 723 for dependency management. No separate installation or virtual environment needed!
 
 1.  **Clone the repository:**
     ```bash
@@ -31,34 +34,41 @@ This tool systematically gathers information from the Ollama website, including 
     cd OllamaScraper
     ```
 
-2.  **Create and activate a virtual environment (recommended):**
+2.  **Install UV (if not already installed):**
     ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
 
-3.  **Install the required dependencies:**
+3.  **Make the script executable (one time only):**
     ```bash
-    pip install -r requirements.txt
+    chmod +x ollama_scraper.py
     ```
+
+That's it! UV will automatically handle all dependencies when you run the script.
 
 ## Usage
 
 Run the scraper from the command line. The output will be saved to `out/ollama_models.json` by default.
 
+**Run directly (recommended):**
 ```bash
-python ollama_scraper.py
+./ollama_scraper.py
+```
+
+**Or using UV explicitly:**
+```bash
+uv run ollama_scraper.py
 ```
 
 ### Command-line Options
 
 -   `--limit <N>`: Limit the number of models to scrape (useful for quick tests).
     ```bash
-    python ollama_scraper.py --limit 10
+    ./ollama_scraper.py --limit 10
     ```
 -   `--out <PATH>`: Specify a custom output file path.
     ```bash
-    python ollama_scraper.py --out data/models.json
+    ./ollama_scraper.py --out data/models.json
     ```
 
 ## Accessing the Data
